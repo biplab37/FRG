@@ -3,10 +3,17 @@
 ###    points. Here we have introduced a cutoff for the Bososnic momenta as well.     ###
 #########################################################################################
 
+include("GetVelEps.jl")
+include("RGProcedure.jl")
+include("Plotting.jl")
+
+using .GetVelEps, .RGProcedure, .Plotting
+using HDF5
+
 ## Initialisation
 
-const m::Int64 = 198 # number of cutoffs
-const n::Int64 = 209 # number of momenta
+@show const m = 198 # number of cutoffs
+@show const n = 209 # number of momenta
 
 velocity = zeros(n,m)
 dielectric = zeros(n,m)
@@ -16,6 +23,7 @@ dielectric = zeros(n,m)
 
 This function returns the integrand of the FRG equation for the velocity renormlisation.
 ## Args
+    dielectric (Array) : Array containing the dielectric values
     momentum (Float64) : momentum value
     cutoff   (FLoat64) : running cutoff
     phi      (Float64) : angular coordinate
@@ -31,16 +39,7 @@ function velocity_integrand(dielectric::Array{Float64,2}, momentum::Float64, cut
         k1 = cutoff
         k2 = cutoff + cos(phi)*momentum
 
-        index1::Int64 = Int(round(k1*n))
-        index2::Int64 = Int(round(k2*n))
-
-        eps1::Float64 = dielectric[index1,m-i+2]
-
-        if index2<n
-            eps2::Float64 = dielectric[index2,m-i+2]
-        else
-            eps2::Float64 = 1.0 # if the index goes out of the boundary take dielectric to be free space one.
-        end
+        eps1,eps2 = get_dielectric(dielectric, k1, k2, m, n, i)
 
         return 2.2*((momentum^2 - k1^2 + k2^2)/(momentum^2*eps1) + (momentum^2 + k1^2 - k2^2)/(momentum^2*eps2))/(2.0*pi*sqrt((k1+k2)^2 - momentum^2))
     end
@@ -51,6 +50,7 @@ end
 
 This function returns the integrand of the FRG equation for the dielectric function renormlisation.
 ## Args
+    velocity   (Array) : The velocity array
     momentum (Float64) : momentum value
     cutoff   (FLoat64) : running cutoff
     phi      (Float64) : angular coordinate
@@ -66,16 +66,7 @@ function dielectric_integrand(velocity::Array{Float64,2}, momentum::Float64, cut
         k1 = cutoff
         k2 = cutoff + cos(phi)*momentum
 
-        index1::Int64 = Int64(round(k1*n))
-        index2::Int64 = Int64(round(k2*n))
-
-        vel1::Float64 = velocity[index1,m-i+2]
-
-        if index2<n
-            vel2::Float64 = velocity[index2,m-i+2]
-        else
-            vel2::Float64 = 1.0
-        end
+        vel1, vel2 = get_velocity(velocity, k1, k2, m, n, i)
 
         return 4.4*momentum*sin(phi)^2/(pi*(k1*vel1 + k2*vel2)*sqrt((k1+k2)^2 - momentum^2))
     end
@@ -85,14 +76,21 @@ end
 velocity[:,m] .= 1.0
 dielectric[:,m] .= 1.0
 
-## solving exact FRG using an user defined function
-using .RGProcedure
+## solving exact FRG using an user defined function in the module RGProcedure
 
 rg_procedure(velocity,dielectric,velocity_integrand, dielectric_integrand ,m,n)
 
-## Plots using a user defined module
-using .Plotting
+
+## Plots using user defined functions defined in the module Plotting
 
 plot_velocity(velocity[:,1],"Renormalised_velocity.pdf")
 
 plot_dielectric(dielectric[:,1],"Renormalised_dielectric.pdf")
+
+## Save the data for future usage
+# using JLD
+# save("coupled.jld","velocity",velocity,"dielectric",dielectric)
+
+# using HDF5
+# h5write("coupled.h5","velocity",velocity)
+# h5write("coupled.h5","dielectric",dielectric)
